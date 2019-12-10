@@ -45,6 +45,7 @@ namespace EntityGraphQL.Schema
                     // add non-pural field with argument of ID
                     AddFieldWithIdArgumentIfExists(schema, contextType, f);
                 }
+                f.Name = f.Name.Pluralize();
                 schema.AddField(f);
             }
             return schema;
@@ -55,22 +56,28 @@ namespace EntityGraphQL.Schema
             if (!fieldProp.Resolve.Type.IsEnumerableOrArray())
                 return;
             var schemaType = schema.Type(fieldProp.ReturnTypeClrSingle);
-            var idFieldDef = schemaType.GetFields().FirstOrDefault(f => f.Name == "id");
+            // Find the first field named "id" or "<fieldProp.Name>Id" to turn into a field with arguments
+            var idFieldDef = schemaType.GetFields().FirstOrDefault(f => f.Name.ToLower() == "id" || f.Name.ToLower() == $"{fieldProp.Name.ToLower()}id");
             if (idFieldDef == null)
                 return;
+
+            // Save a little bit of typing and clean things up.
+            var idFieldName = idFieldDef.Name; 
 
             // We need to build an anonymous type with id = RequiredField<idFieldDef.Resolve.Type>()
             // Resulting lambda is (a, p) => a.Where(b => b.Id == p.Id).First()
             // This allows us to "insert" .Select() (and .Include()) before the .First()
             var requiredFieldType = typeof(RequiredField<>).MakeGenericType(idFieldDef.Resolve.Type);
-            var fieldNameAndType = new Dictionary<string, Type> { { "id", requiredFieldType } };
+            var fieldNameAndType = new Dictionary<string, Type> { { idFieldName, requiredFieldType } };
             var argTypes = LinqRuntimeTypeBuilder.GetDynamicType(fieldNameAndType);
             var argTypesValue = argTypes.GetTypeInfo().GetConstructors()[0].Invoke(new Type[0]);
             var argTypeParam = Expression.Parameter(argTypes);
             Type arrayContextType = schema.Type(fieldProp.ReturnTypeClrSingle).ContextType;
             var arrayContextParam = Expression.Parameter(arrayContextType);
-            var ctxId = Expression.PropertyOrField(arrayContextParam, "Id");
-            Expression argId = Expression.PropertyOrField(argTypeParam, "id");
+
+            var ctxId = Expression.PropertyOrField(arrayContextParam, $"{char.ToUpper(idFieldName[0])}{idFieldName.Substring(1)}");
+            Expression argId = Expression.PropertyOrField(argTypeParam, idFieldName);
+
             argId = Expression.Property(argId, "Value"); // call RequiredField<>.Value to get the real type without a convert
             var idBody = Expression.MakeBinary(ExpressionType.Equal, ctxId, argId);
             var idLambda = Expression.Lambda(idBody, new[] { arrayContextParam });
@@ -85,7 +92,7 @@ namespace EntityGraphQL.Schema
             if (name == null)
             {
                 // If we can't singularize it just use the name plus something as GraphQL doesn't support field overloads
-                name = $"{fieldProp.Name}ById";
+                name = $"{fieldProp.Name}";
             }
             var field = new Field(name, selectionExpression, $"Return a {fieldProp.ReturnTypeClrSingle} by its Id", fieldProp.ReturnTypeClrSingle, argTypesValue);
             schema.AddField(field);
@@ -139,7 +146,7 @@ namespace EntityGraphQL.Schema
             return f;
         }
 
-        private static ISchemaType CacheType<TContextType>(Type propType,  MappedSchemaProvider<TContextType> schema)
+        private static ISchemaType CacheType<TContextType>(Type propType, MappedSchemaProvider<TContextType> schema)
         {
             if (propType.IsEnumerableOrArray())
             {
@@ -162,7 +169,7 @@ namespace EntityGraphQL.Schema
                     // dynamcially call generic method
                     // hate this, but want to build the types with the right Genenics so you can extend them later.
                     // this is not the fastest, but only done on schema creation
-                    var method = schema.GetType().GetMethod("AddType", new [] {typeof(string), typeof(string)});
+                    var method = schema.GetType().GetMethod("AddType", new[] { typeof(string), typeof(string) });
                     method = method.MakeGenericMethod(propType);
                     var t = (ISchemaType)method.Invoke(schema, new object[] { propType.Name, description });
 
