@@ -42,6 +42,7 @@ namespace EntityGraphQL.Schema
             var argInstance = AssignArgValues(gqlRequestArgs);
             allArgs.Add(argInstance);
 
+            // finally call the mutation method which will return a lambda expression for the linq query we'll use to find the item we added.
             var result = method.Invoke(mutationClassInstance, allArgs.ToArray());
             return result;
         }
