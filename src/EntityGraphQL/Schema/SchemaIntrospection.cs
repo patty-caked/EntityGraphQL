@@ -127,9 +127,9 @@
                     if (field.Resolve.NodeType == System.Linq.Expressions.ExpressionType.Call)
                         continue;
 
-                    // Skipping ENUM type
-                    if (field.ReturnTypeClr.GetTypeInfo().IsEnum)
-                        continue;
+                    // Skipping ENUM type // Why would we skip ENUM types? What if we want an input type to have an enum field?
+                    //if (field.ReturnTypeClr.GetTypeInfo().IsEnum)
+                        //continue;
 
                     inputValues.Add(new Models.InputValue
                     {
@@ -174,6 +174,9 @@
                 //filter to ENUM type ONLY!
                 foreach (Field field in schemaType.GetFields())
                 {
+                    if (field.Name.StartsWith("__"))
+                        continue;
+
                     enumTypes.Add(new Models.EnumValue
                     {
                         Name = field.Name,

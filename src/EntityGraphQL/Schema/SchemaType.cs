@@ -29,7 +29,10 @@ namespace EntityGraphQL.Schema
             Description = description;
             IsInput = isInput;
             IsEnum = isEnum;
-            AddField("__typename", t => name, "Type name");
+            
+            // Prevents graphql from thinking "__typename" is part of this enum
+            //if (!IsEnum)
+                AddField("__typename", t => name, "Type name");
         }
 
         /// <summary>

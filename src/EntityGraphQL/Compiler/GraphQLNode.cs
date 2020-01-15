@@ -202,7 +202,7 @@ namespace EntityGraphQL.Compiler
                 allArgs.AddRange(ConstantParameters.Values);
             }
             var lambdaExpression = Expression.Lambda(expression, parameters.ToArray());
-            // run the final lambda expression that we got back from the query
+            // return final lambda expression that we got back from the query/mutation
             return lambdaExpression.Compile().DynamicInvoke(allArgs.ToArray());
         }
 
