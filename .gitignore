@@ -15,4 +15,3 @@ obj/
 .vs/
 
 node_modules/
-/src/demo/Properties/launchSettings.json
