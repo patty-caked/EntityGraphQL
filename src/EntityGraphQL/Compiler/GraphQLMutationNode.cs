@@ -40,8 +40,6 @@ namespace EntityGraphQL.Compiler
 
         public object Execute(params object[] args)
         {
-            var allArgs = new List<object>(args);
-
             // run the mutation to get the context for the query select
             var mutation = (MutationResult)this.result.ExpressionResult;
             var result = mutation.Execute(args);
@@ -62,47 +60,69 @@ namespace EntityGraphQL.Compiler
 
                 var selectParam = graphQLNode.Parameters.First();
 
-                if (!mutationLambda.ReturnType.IsEnumerableOrArray() && mutationExpression.NodeType == ExpressionType.Call)
+                if (!mutationLambda.ReturnType.IsEnumerableOrArray())
                 {
-                    var call = (MethodCallExpression)mutationExpression;
-                    if (call.Method.Name == "First" || call.Method.Name == "FirstOrDefault" || call.Method.Name == "Last" || call.Method.Name == "LastOrDefault")
+                    if (mutationExpression.NodeType == ExpressionType.Call)
                     {
-                        var baseExp = call.Arguments.First();
-                        if (call.Arguments.Count == 2)
+                        var call = (MethodCallExpression)mutationExpression;
+                        if (call.Method.Name == "First" || call.Method.Name == "FirstOrDefault" || call.Method.Name == "Last" || call.Method.Name == "LastOrDefault")
                         {
-                            // move the fitler to a Where call
-                            var filter = call.Arguments.ElementAt(1);
-                            baseExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, "Where", new Type[] { selectParam.Type }, baseExp, filter);
+                            var baseExp = call.Arguments.First();
+                            if (call.Arguments.Count == 2)
+                            {
+                                // move the fitler to a Where call
+                                var filter = call.Arguments.ElementAt(1);
+                                baseExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, "Where", new Type[] { selectParam.Type }, baseExp, filter);
+                            }
+
+                            // build select
+                            var selectExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, "Select", new Type[] { selectParam.Type, graphQLNode.GetNodeExpression().Type}, baseExp, Expression.Lambda(graphQLNode.GetNodeExpression(), selectParam));
+
+                            // add First/Last back
+                            var firstExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, call.Method.Name, new Type[] { selectExp.Type.GetGenericArguments()[0] }, selectExp);
+
+                            // we're done
+                            graphQLNode.SetNodeExpression(firstExp);
                         }
-
-                        // build select
-                        var selectExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, "Select", new Type[] { selectParam.Type, graphQLNode.GetNodeExpression().Type}, baseExp, Expression.Lambda(graphQLNode.GetNodeExpression(), selectParam));
-
-                        // add First/Last back
-                        var firstExp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, call.Method.Name, new Type[] { selectExp.Type.GetGenericArguments()[0] }, selectExp);
-
-                        // we're done
-                        graphQLNode.SetNodeExpression((ExpressionResult)firstExp);
                     }
                     else
                     {
-                        throw new QueryException($"Mutation {Name} has invalid return type of {result.GetType()}. Please return Expression<Func<TConext, TEntity>> or Expression<Func<TConext, IEnumerable<TEntity>>>");
+                        // if they just return a constant I.e the entity they just updated. It comes as a memebr access constant
+                        if (mutationLambda.Body.NodeType == ExpressionType.MemberAccess)
+                        {
+                            var me = (MemberExpression)mutationLambda.Body;
+                            if (me.Expression.NodeType == ExpressionType.Constant)
+                            {
+                                graphQLNode.AddConstantParameter(Expression.Parameter(me.Type), Expression.Lambda(me).Compile().DynamicInvoke());
+                            }
+                        }
+                        else if (mutationLambda.Body.NodeType == ExpressionType.Constant)
+                        {
+                            var ce = (ConstantExpression)mutationLambda.Body;
+                            graphQLNode.AddConstantParameter(Expression.Parameter(ce.Type), ce.Value);
+                        }
                     }
                 }
                 else
                 {
-                    var exp = Expression.Call(typeof(Queryable), "Select", new Type[] { selectParam.Type, graphQLNode.GetNodeExpression().Type}, mutationExpression, Expression.Lambda(graphQLNode.GetNodeExpression(), selectParam));
-                    graphQLNode.SetNodeExpression((ExpressionResult)exp);
+                    var exp = ExpressionUtil.MakeExpressionCall(new [] {typeof(Queryable), typeof(Enumerable)}, "Select", new Type[] { selectParam.Type, graphQLNode.GetNodeExpression().Type}, mutationExpression, Expression.Lambda(graphQLNode.GetNodeExpression(), selectParam));
+                    graphQLNode.SetNodeExpression(exp);
                 }
 
                 // make sure we use the right parameter
                 graphQLNode.Parameters[0] = mutationContextParam;
-                result = graphQLNode.Execute(args[0]);
+                var executionArg = args[0];
+                result = graphQLNode.Execute(executionArg);
                 return result;
             }
             // run the query select
             result = graphQLNode.Execute(result);
             return result;
+        }
+
+        public void AddConstantParameter(ParameterExpression param, object val)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -1,3 +1,29 @@
+# 0.28.2
+- Fix error with `EntityQueryType<>` as a field argument not being defined as a `String` in introspection
+
+# 0.28.1
+ - Fix issue introduced in 0.28 when using the `RequiredField<>` type
+
+# 0.28.0
+- Only convert a string matching a `Guid` when the arg type is a `Guid` or `Guid?`
+
+# 0.27.2
+- Fix issue where a non-required EntityQueryType Filter throw an error if it wasn't supplied
+
+# 0.27.1
+- Better support mutations that return an object, not a list
+
+# 0.27.0
+- Introspection query `__type(name: "")` now correctly returns an object not an array
+- `[Description("")]` attributes on `enum` fields are now read into the schema
+- Fix issue where introspection query would have dupelicate types for enum types
+
+# 0.26.0
+- `ISchemaType.AddAllFields` requires a schema as it can add newly discovered types to that schema
+- `ISchemaType.AddAllFields` by default adds new `enum` types to the schema if found as a field type
+- `ISchemaType.AddAllFields` can (off by default) add new complex types to the schema if found as a field type
+- `Schema.Type<TType>()` now searches by `TType` not `typeof(TType).Name`. Allowing you to add a type with a different name but still get the typed `SchemaType<T>` back
+
 # 0.25.0
 - Add the ability to add enum types to the schema
 - The auto schema builder now adds enum types it finds to the schema by default

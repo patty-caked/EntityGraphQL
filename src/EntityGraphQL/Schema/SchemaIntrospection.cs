@@ -17,7 +17,7 @@
         /// <returns></returns>
         public static Models.Schema Make(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
         {
-            var types = new List<Models.TypeElement>
+            var types = new List<TypeElement>
             {
                 new TypeElement
                 {
@@ -41,11 +41,11 @@
 
             var schemaDescription = new Models.Schema
             {
-                QueryType = new Models.TypeElement
+                QueryType = new TypeElement
                 {
                     Name = "Query"
                 },
-                MutationType = new Models.TypeElement
+                MutationType = new TypeElement
                 {
                     Name = "Mutation"
                 },
@@ -58,11 +58,11 @@
 
         private static IEnumerable<TypeElement> BuildScalarTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
         {
-            var types = new List<Models.TypeElement>();
+            var types = new List<TypeElement>();
 
             foreach (var customScalar in schema.CustomScalarTypes)
             {
-                var typeElement = new Models.TypeElement
+                var typeElement = new TypeElement
                 {
                     Kind = "SCALAR",
                     Name = customScalar,
@@ -75,13 +75,13 @@
             return types;
         }
 
-        private static List<Models.TypeElement> BuildQueryTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
+        private static List<TypeElement> BuildQueryTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
         {
-            var types = new List<Models.TypeElement>();
+            var types = new List<TypeElement>();
 
-            foreach (var st in schema.GetNonContextTypes().Where(s => !s.IsInput))
+            foreach (var st in schema.GetNonContextTypes().Where(s => !s.IsInput && !s.IsEnum))
             {
-                var typeElement = new Models.TypeElement
+                var typeElement = new TypeElement
                 {
                     Kind = "OBJECT",
                     Name = st.Name,
@@ -103,9 +103,9 @@
         /// Since Types and Inputs cannot have the same name, camelCase the name to prevent duplicates.
         /// </remarks>
         /// <returns></returns>
-        private static List<Models.TypeElement> BuildInputTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
+        private static List<TypeElement> BuildInputTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
         {
-            var types = new List<Models.TypeElement>();
+            var types = new List<TypeElement>();
 
             foreach (ISchemaType schemaType in schema.GetNonContextTypes().Where(s => s.IsInput))
             {
@@ -139,7 +139,7 @@
                     });
                 }
 
-                var typeElement = new Models.TypeElement
+                var typeElement = new TypeElement
                 {
                     Kind = "INPUT_OBJECT",
                     Name = schemaType.Name,
@@ -153,13 +153,13 @@
             return types;
         }
 
-        private static List<Models.TypeElement> BuildEnumTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
+        private static List<TypeElement> BuildEnumTypes(ISchemaProvider schema, IReadOnlyDictionary<Type, string> combinedMapping)
         {
-            var types = new List<Models.TypeElement>();
+            var types = new List<TypeElement>();
 
             foreach (ISchemaType schemaType in schema.GetNonContextTypes().Where(s => s.IsEnum))
             {
-                var typeElement = new Models.TypeElement
+                var typeElement = new TypeElement
                 {
                     Kind = "ENUM",
                     Name = schemaType.Name,
@@ -191,10 +191,10 @@
             return types;
         }
 
-        private static Models.TypeElement BuildType(ISchemaProvider schema, Type clrType, string gqlTypeName, IReadOnlyDictionary<Type, string> combinedMapping, bool isInput = false)
+        private static TypeElement BuildType(ISchemaProvider schema, Type clrType, string gqlTypeName, IReadOnlyDictionary<Type, string> combinedMapping, bool isInput = false)
         {
             // Is collection of objects?
-            var type = new Models.TypeElement();
+            var type = new TypeElement();
             if (clrType.IsEnumerableOrArray())
             {
                 type.Kind = "LIST";
@@ -215,7 +215,7 @@
             }
             else
             {
-                type.Kind = combinedMapping.Any(x => x.Key == clrType) ? "SCALAR" : "OBJECT";
+                type.Kind = FindTypeInMapping(clrType, combinedMapping) != null ? "SCALAR" : "OBJECT";
                 type.OfType = null;
                 if (type.Kind == "OBJECT" && isInput)
                 {
@@ -344,13 +344,19 @@
 
         private static string FindNamedMapping(Type name, IReadOnlyDictionary<Type, string> combinedMapping, string fallback = null)
         {
-            if (combinedMapping.Any(x => x.Key == name))
-                return combinedMapping[name];
+            var mappedType = FindTypeInMapping(name, combinedMapping);
+            if (mappedType != null)
+                return mappedType;
             else
                 if (string.IsNullOrEmpty(fallback))
-                    return name.Name;
-                else
-                    return fallback;
+                return name.Name;
+            else
+                return fallback;
+        }
+
+        private static string FindTypeInMapping(Type name, IReadOnlyDictionary<Type, string> combinedMapping)
+        {
+            return combinedMapping.FirstOrDefault(x => x.Key == name || (name.GetTypeInfo().IsGenericType && name.GetGenericTypeDefinition() == x.Key)).Value;
         }
 
         private static List<Models.Directives> BuildDirectives()
@@ -367,11 +373,11 @@
                 //             Name = "if",
                 //             Description = "Included when true.",
                 //             DefaultValue = null,
-                //             Type = new Models.TypeElement
+                //             Type = new TypeElement
                 //             {
                 //                 Kind = "NON_NULL",
                 //                 Name = null,
-                //                 OfType = new Models.TypeElement
+                //                 OfType = new TypeElement
                 //                 {
                 //                     Kind = "SCALAR",
                 //                     Name = "Boolean",
@@ -391,11 +397,11 @@
                 //             Name = "if",
                 //             Description = "Skipped when true.",
                 //             DefaultValue = null,
-                //             Type = new Models.TypeElement
+                //             Type = new TypeElement
                 //             {
                 //                 Kind = "NON_NULL",
                 //                 Name = null,
-                //                 OfType = new Models.TypeElement
+                //                 OfType = new TypeElement
                 //                 {
                 //                     Kind = "SCALAR",
                 //                     Name = "Boolean",
