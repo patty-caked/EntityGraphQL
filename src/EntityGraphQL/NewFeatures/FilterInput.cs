@@ -8,6 +8,14 @@ using EntityGraphQL.CodeGeneration;
 
 namespace EntityGraphQL.NewFeatures
 {
+    /// <summary>
+    /// This exists for testing. Delete it once testing is done.
+    /// </summary>
+    public enum itemFilterEnum
+    {
+        itemId
+    }
+
     public enum Comparisons
     {
         Equals,
@@ -33,9 +41,9 @@ namespace EntityGraphQL.NewFeatures
         OR,
     }
 
-    public class FilterInput<TEnum>
+    public class FilterInput
     {
-        public TEnum Field { get; set; }
+        public string Field { get; set; }
         public FilterConjunctions Conjunction { get; set; }
         public new string Equals { get; set; }
         public string NotEqualTo { get; set; }
@@ -47,7 +55,17 @@ namespace EntityGraphQL.NewFeatures
         public string[] NotIn { get; set; }
         public bool? IsNull { get; set; }
 
-        public static IQueryable<T> FilterThis<T>(IQueryable<T> query, FilterInput<TEnum>[] filters)
+        public static IQueryable<T> FilterThisEnumerable<T>(IEnumerable<T> dbSet, FilterInput[] filters)
+        {
+            return FilterThisQueryable(dbSet.AsQueryable(), filters);
+        }
+
+        public static IQueryable<T> FilterThisQueryable<T>(IQueryable<T> dbSet, FilterInput[] filters)
+        {
+            return FilterThis(dbSet.AsQueryable(), filters);
+        }
+
+        public static IQueryable<T> FilterThis<T>(IQueryable<T> query, FilterInput[] filters)
         {
             //var blah = Enumerizer.GetDatabaseEnums<SuryaProducts>();
 
@@ -58,7 +76,7 @@ namespace EntityGraphQL.NewFeatures
 
             ParameterExpression obj = Expression.Parameter(typeof(object), "lambdObj");
 
-            foreach (FilterInput<TEnum> f in filters)
+            foreach (FilterInput f in filters)
             {
                 expressions.Add(f.ConstructFilterExpression(query, obj));
             }
@@ -117,7 +135,7 @@ namespace EntityGraphQL.NewFeatures
             else if (predicateBody != null && andChain != null)
                 predicateBody = Expression.OrElse(predicateBody, andChain);
 
-            var boolExpressionTree = Expressionator<TEnum>.Lambdanator<T>(predicateBody, obj);
+            var boolExpressionTree = Expressionator.Lambdanator<T>(predicateBody, obj);
 
             var result = query.Where(boolExpressionTree);
 
@@ -137,10 +155,10 @@ namespace EntityGraphQL.NewFeatures
 
             //ParameterExpression obj;
 
-            Expression body = Expressionator<TEnum>.ExpressionMaker(this, comparison, obj);
+            Expression body = Expressionator.ExpressionMaker(this, comparison, obj);
 
             // returns a lambda that looks similar to: obj => (GetPropValueString(obj, Field) == Equals)
-            var boolExpressionTree = Expressionator<TEnum>.Lambdanator<T>(body, obj);
+            var boolExpressionTree = Expressionator.Lambdanator<T>(body, obj);
 
             var result = query.Where(boolExpressionTree);
             return body;
@@ -151,7 +169,7 @@ namespace EntityGraphQL.NewFeatures
         /// </summary>
         /// <param name="filters"></param>
         /// <returns></returns>
-        private static bool HasTooManyComparisons(out Comparisons? comparisons, FilterInput<TEnum> filters)
+        private static bool HasTooManyComparisons(out Comparisons? comparisons, FilterInput filters)
         {
             comparisons = null;
             var count = 0;

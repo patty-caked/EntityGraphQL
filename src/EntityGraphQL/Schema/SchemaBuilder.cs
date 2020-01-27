@@ -45,6 +45,9 @@ namespace EntityGraphQL.Schema
                     // add non-pural field with argument of ID
                     AddFieldWithIdArgumentIfExists(schema, contextType, f);
                 }
+                /// New Addition
+                FilterEnumBuilder.AddFieldWithFilterArgument(schema, contextType, f);
+
                 f.Name = f.Name.Pluralize();
                 schema.AddField(f);
             }

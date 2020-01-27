@@ -19,6 +19,13 @@ namespace EntityGraphQL.Schema
         public bool ReturnTypeNotNullable { get; set; }
         public bool ReturnElementTypeNullable { get; set; }
 
+        public Field(string name, LambdaExpression resolve, string description, string returnSchemaType, Type returnClrType, int eh) : this(name, resolve, description, returnSchemaType, returnClrType)
+        {
+            ReturnTypeClrSingle = returnSchemaType;
+            ReturnTypeClr = returnClrType;
+        }
+
+
         internal Field(string name, LambdaExpression resolve, string description, string returnSchemaType = null, Type returnClrType = null)
         {
             Name = name;

@@ -129,7 +129,7 @@
 
                     // Skipping ENUM type // Why would we skip ENUM types? What if we want an input type to have an enum field?
                     //if (field.ReturnTypeClr.GetTypeInfo().IsEnum)
-                        //continue;
+                    //    continue;
 
                     inputValues.Add(new Models.InputValue
                     {

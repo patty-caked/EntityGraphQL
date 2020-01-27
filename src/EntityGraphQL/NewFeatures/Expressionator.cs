@@ -8,18 +8,18 @@ using EntityGraphQL.NewFeatures;
 
 namespace EntityGraphQL.CodeGeneration
 {
-    public static class Expressionator<TEnum>
+    public static class Expressionator
     {
-        public static Expression ExpressionMaker(FilterInput<TEnum> filter, Comparisons? comparison, out ParameterExpression mainParam)
+        /*public static Expression ExpressionMaker(FilterInput filter, Comparisons? comparison, out ParameterExpression mainParam)
         {
             mainParam = Expression.Parameter(typeof(object), "Lambda parameter obj");
 
             return ExpressionMaker(filter, comparison, mainParam);
-        }
+        }*/
 
-        public static Expression ExpressionMaker(FilterInput<TEnum> filter, Comparisons? comparison, ParameterExpression mainParam)
+        public static Expression ExpressionMaker(FilterInput filter, Comparisons? comparison, ParameterExpression mainParam)
         {
-            object temp = FilterInput<TEnum>.GetPropValue(filter, comparison.ToString());
+            object temp = FilterInput.GetPropValue(filter, comparison.ToString());
             string methName;
             switch (comparison)
             {
@@ -72,7 +72,7 @@ namespace EntityGraphQL.CodeGeneration
             //Expression propValMCE = Expression.Call(typeof(FilterInput).GetMethod("GetPropValueAsString", new Type[] { typeof(object), typeof(string) }),
                 //new Expression[] { mainParam, constEnum });
 
-            MethodInfo methInfo = typeof(Expressionator<TEnum>).GetMethod(methName);
+            MethodInfo methInfo = typeof(Expressionator).GetMethod(methName);
 
             Expression boolValMCE = Expression.Call(methInfo,
                 new Expression[] { mainParam, constEnum, constCompare });
@@ -85,58 +85,62 @@ namespace EntityGraphQL.CodeGeneration
             return Expression.Lambda<Func<T, bool>>(body, new[] { paramEx });
         }
 
+        public static IQueryable<T> FilterQueryMaker<T>()
+        {
+            return null;
+        }
 
 
         public static bool EqualTo(object src, string field, string compValue)
         {
-            return FilterInput<TEnum>.GetPropValueAsString(src, field) == compValue;
+            return FilterInput.GetPropValueAsString(src, field) == compValue;
         }
 
         public static bool NotEqualTo(object src, string field, string compValue)
         {
-            return FilterInput<TEnum>.GetPropValueAsString(src, field) != compValue;
+            return FilterInput.GetPropValueAsString(src, field) != compValue;
         }
 
         public static bool GreaterThan(object src, string field, string compValue)
         {
-            return string.Compare(FilterInput<TEnum>.GetPropValueAsString(src, field), compValue) > 0;
+            return string.Compare(FilterInput.GetPropValueAsString(src, field), compValue) > 0;
         }
 
-        public static bool GreaterThanOrEqual(object src, string field, string compValue)
+        public static bool GreaterThanOrEqualTo(object src, string field, string compValue)
         {
-            return string.Compare(FilterInput<TEnum>.GetPropValueAsString(src, field), compValue) >= 0;
+            return string.Compare(FilterInput.GetPropValueAsString(src, field), compValue) >= 0;
         }
 
         public static bool LessThan(object src, string field, string compValue)
         {
-            return string.Compare(FilterInput<TEnum>.GetPropValueAsString(src, field), compValue) < 0;
+            return string.Compare(FilterInput.GetPropValueAsString(src, field), compValue) < 0;
         }
 
-        public static bool LessThanOrEqual(object src, string field, string compValue)
+        public static bool LessThanOrEqualTo(object src, string field, string compValue)
         {
-            return string.Compare(FilterInput<TEnum>.GetPropValueAsString(src, field), compValue) <= 0;
+            return string.Compare(FilterInput.GetPropValueAsString(src, field), compValue) <= 0;
         }
 
         public static bool IsIn(object src, string field, string[] compValue)
         {
-            return compValue.Contains(FilterInput<TEnum>.GetPropValueAsString(src, field));
+            return compValue.Contains(FilterInput.GetPropValueAsString(src, field));
         }
 
         public static bool IsNotIn(object src, string field, string[] compValue)
         {
-            return !compValue.Contains(FilterInput<TEnum>.GetPropValueAsString(src, field));
+            return !compValue.Contains(FilterInput.GetPropValueAsString(src, field));
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "This needs blah for expression stuff")]
         public static bool IsNull(object src, string field, bool blah = false)
         {
-            return FilterInput<TEnum>.GetPropValueAsString(src, field) == "";
+            return FilterInput.GetPropValueAsString(src, field) == "";
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "This needs blah for expression stuff")]
         public static bool IsNotNull(object src, string field, bool blah = false)
         {
-            return FilterInput<TEnum>.GetPropValueAsString(src, field) != "";
+            return FilterInput.GetPropValueAsString(src, field) != "";
         }
     }
 }

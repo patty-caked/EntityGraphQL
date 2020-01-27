@@ -1,5 +1,8 @@
 ﻿using EntityGraphQL.Compiler;
+using EntityGraphQL.Compiler.Util;
+using EntityGraphQL.Extensions;
 using EntityGraphQL.NewFeatures;
+using Humanizer;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -128,29 +131,122 @@ namespace EntityGraphQL.Schema
                 Type finished = eb.CreateTypeInfo().AsType();
                 types.Add(finished);
 
-                schema.AddEnum(entry.Key, finished, $"A list of the fields in {entry.Key.Replace("FilterEnum", "")} that can be filtered by.");
-                //schema.AddInputType<FilterInput>("FilterInput", "Input Type description").AddAllFields();
-                var varTest = Activator.CreateInstance(finished);
-                dynamic dynTest = Activator.CreateInstance(finished);
-                //schema.FilterAdder(Activator.CreateInstance(finished));
+                string baseName = entry.Key.Replace("FilterEnum", "");
+
+                schema.AddEnum(entry.Key, finished, $"A list of the fields in {baseName} that can be filtered by.");
+
+                schema.FilterAdder(Activator.CreateInstance(finished), baseName);
             }
 
             return types;
         }
 
-        public static void FilterAdder<TContextType, TFilterEnum>(this MappedSchemaProvider<TContextType> schema, TFilterEnum type)
+        /// <summary>
+        /// Adds a FilterInput input type to the schema and dynamically changes the "Field" field's type to mach a given enum type.
+        /// </summary>
+        /// <typeparam name="TContextType"></typeparam>
+        /// <typeparam name="TFilterEnum"></typeparam>
+        /// <param name="schema"></param>
+        /// <param name="type">An instance of the given enum type to change to.</param>
+        /// <param name="filterNamePrefix">Probably don't need this. Update later.</param>
+        public static void FilterAdder<TContextType, TFilterEnum>(this MappedSchemaProvider<TContextType> schema, TFilterEnum type, string filterNamePrefix)
         {
-            var blah = typeof(TFilterEnum);
-            var typeTest = type.GetType();
-            var test = schema.AddInputType<FilterInput<TFilterEnum>>(type.GetType().Name.Replace("FilterEnum", "") + "FilterInput", "Input Type description");
-            //Figure out how to replace the "Field" field with the same field of a different type.
-            //var parameter = Expression.Parameter(FilterInput);
-            //Expression.Lambda(Expression.Property(parameter, f.Name), parameter), description, null));
+            //var blah = typeof(TFilterEnum);
+            //Should hold the type of enum we've generated
+            var typeTest = type.GetType(); 
 
-            //test.ReplaceField("Field",)
 
-            test.AddAllFields();
 
+            var inType = schema.AddInputType<FilterInput>($"{filterNamePrefix}FilterInput", "Dynamically generated input type.").AddAllFields(schema, true, true);
+            Field origField = inType.GetField("field");
+
+            //var memInfo = origField.ReturnTypeClr.pro
+            //PropertyInfo propInfo = typeof(FilterInput).GetProperty("Field");
+            //ParameterExpression pe = ParameterExpression.Parameter(typeTest);
+            LambdaExpression le = Expression.Lambda(Expression.Property(origField.FieldParam, "Field"), origField.FieldParam);
+
+            //var newResolve = origField.Resolve;
+            Field newField = new Field("field", le, "InputField field made on the fly.", $"{filterNamePrefix}FilterEnum", typeTest, 0);
+
+            //inType.ReplaceField()
+            inType.RemoveField("field");
+            inType.AddField(newField);
+        }
+
+        public static void AddFieldWithFilterArgument<TContextType>(MappedSchemaProvider<TContextType> schema, Type contextType, Field fieldProp)
+        {
+            if (!fieldProp.Resolve.Type.IsEnumerableOrArray())
+                return;
+
+            /*
+            var schemaType = schema.Type(fieldProp.ReturnTypeClrSingle);
+            // Find the first field named "id" or "<fieldProp.Name>Id" to turn into a field with arguments
+            var idFieldDef = schemaType.GetFields().FirstOrDefault(f => f.Name.ToLower() == "id" || f.Name.ToLower() == $"{fieldProp.Name.ToLower()}id");
+            if (idFieldDef == null)
+                return;
+
+            // Save a little bit of typing and clean things up.
+            var idFieldName = idFieldDef.Name;
+
+            // {ctx => FilterThis(ctx.Item.AsQueryable(), value(EFTest.EntityGraphQL.Mutations.TestMutations+<>c__DisplayClass1_0).args.Filters)}
+
+            // We need to build an anonymous type with id = RequiredField<idFieldDef.Resolve.Type>()
+            // Resulting lambda is (a, p) => a.Where(b => b.Id == p.Id).First()
+            // This allows us to "insert" .Select() (and .Include()) before the .First()
+            var requiredFieldType = typeof(RequiredField<>).MakeGenericType(idFieldDef.Resolve.Type);
+            var fieldNameAndType = new Dictionary<string, Type> { { idFieldName, requiredFieldType } };
+            var argTypes = LinqRuntimeTypeBuilder.GetDynamicType(fieldNameAndType);
+            var argTypesValue = argTypes.GetTypeInfo().GetConstructors()[0].Invoke(new Type[0]);
+            var argTypeParam = Expression.Parameter(argTypes);
+            Type arrayContextType = schema.Type(fieldProp.ReturnTypeClrSingle).ContextType;
+            var arrayContextParam = Expression.Parameter(arrayContextType);
+            */
+
+            // making a PropertyOrField expression that represents TContextType.PropertyName
+            var asdf = new { filters = new FilterInput[0]};
+            var asdfType = asdf.GetType();
+
+            Type arrayContextType = schema.Type(fieldProp.ReturnTypeClrSingle).ContextType;
+            var notRequiredArgType = typeof(FilterInput);
+            var filterNameAndType = new Dictionary<string, Type> { { "filters", notRequiredArgType } };
+            var filterArgTypes = LinqRuntimeTypeBuilder.GetDynamicType(filterNameAndType);
+            var filterArgTypesValue = asdfType.GetTypeInfo().GetConstructors()[0].Invoke(new object[] { asdf.filters });
+            var filterArgTypeParam = Expression.Parameter(asdfType);
+
+            Expression argFilter = Expression.PropertyOrField(filterArgTypeParam, "filters");
+
+            var dbContextParam = Expression.Parameter(contextType);// A parameter for the database context type. This will be the first lambda parameter
+            var ctxField = Expression.PropertyOrField(dbContextParam, "Item");
+            //var ctxTable = Expression.Property(ctxField, "Value");
+            var queryableMeths = typeof(FilterInput).GetMethods();
+            var queryableMethInfo = queryableMeths.FirstOrDefault(method => method.Name == "FilterThisEnumerable" && method.IsGenericMethod == true);
+            //Expression methExp = Expression.Call(queryableMethInfo, fieldProp.Resolve, argFilter);
+            Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisEnumerable", new Type[] { arrayContextType }, fieldProp.Resolve, argFilter);
+            //var asQueryableExp = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "AsQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, ctxField);
+            methExp = new ParameterReplacer().ReplaceByType(methExp, contextType, dbContextParam);
+            
+            var filterLambdaParams = new[] { dbContextParam, filterArgTypeParam };
+            var filterSelectionExpression = Expression.Lambda(methExp, filterLambdaParams);
+            // End new stuff
+
+            /*
+            var ctxId = Expression.PropertyOrField(arrayContextParam, $"{char.ToUpper(idFieldName[0])}{idFieldName.Substring(1)}");
+            Expression argId = Expression.PropertyOrField(argTypeParam, idFieldName);
+
+            argId = Expression.Property(argId, "Value"); // call RequiredField<>.Value to get the real type without a convert
+            var idBody = Expression.MakeBinary(ExpressionType.Equal, ctxId, argId);
+            var idLambda = Expression.Lambda(idBody, new[] { arrayContextParam });
+            Expression body = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "Where", new Type[] { arrayContextType }, fieldProp.Resolve, idLambda);
+
+            body = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "FirstOrDefault", new Type[] { arrayContextType }, body);
+            var contextParam = Expression.Parameter(contextType);
+            var lambdaParams = new[] { contextParam, argTypeParam };
+            body = new ParameterReplacer().ReplaceByType(body, contextType, contextParam);
+            var selectionExpression = Expression.Lambda(body, lambdaParams);
+            */
+            var name = $"{fieldProp.Name}FilterQuery";
+            var field = new Field(name, filterSelectionExpression, $"Return a {fieldProp.ReturnTypeClrSingle} after filtering it", fieldProp.ReturnTypeClrSingle, filterArgTypesValue);
+            schema.AddField(field);
         }
     }
 }
