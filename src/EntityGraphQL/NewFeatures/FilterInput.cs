@@ -5,17 +5,10 @@ using System.Linq;
 using System.Reflection;
 using System.Linq.Expressions;
 using EntityGraphQL.CodeGeneration;
+using EntityGraphQL.Extensions;
 
 namespace EntityGraphQL.NewFeatures
 {
-    /// <summary>
-    /// This exists for testing. Delete it once testing is done.
-    /// </summary>
-    public enum itemFilterEnum
-    {
-        itemId
-    }
-
     public enum Comparisons
     {
         Equals,
@@ -55,26 +48,28 @@ namespace EntityGraphQL.NewFeatures
         public string[] NotIn { get; set; }
         public bool? IsNull { get; set; }
 
-        public static IQueryable<T> FilterThisEnumerable<T>(IEnumerable<T> dbSet, FilterInput[] filters)
+        /// <summary>
+        /// Returns an IQueryable&lt;<typeparamref name="T"/>&gt; representing a filtered query
+        /// </summary>
+        /// <typeparam name="T">The base type of <paramref name="dbSet"/></typeparam>
+        /// <param name="dbSet">The given DbSet&lt;<typeparamref name="T"/>&gt; to be filtered</param>
+        /// <param name="filters">A FilterInput array that defines how to filter <paramref name="dbSet"/></param>
+        /// <returns></returns>
+        public static IQueryable<T> FilterThisQueryable<T>(IQueryable<T> dbSet, FilterInput[] filters = null)
         {
-            return FilterThisQueryable(dbSet.AsQueryable(), filters);
+            if (filters == null || filters.Length == 0)
+                return dbSet;
+            return dbSet.Where(FilterThis(dbSet, filters));
         }
 
-        public static IQueryable<T> FilterThisQueryable<T>(IQueryable<T> dbSet, FilterInput[] filters)
-        {
-            return FilterThis(dbSet.AsQueryable(), filters);
-        }
-
-        public static IQueryable<T> FilterThis<T>(IQueryable<T> query, FilterInput[] filters)
+        public static Expression<Func<T,bool>> FilterThis<T>(IQueryable<T> query, FilterInput[] filters)
         {
             //var blah = Enumerizer.GetDatabaseEnums<SuryaProducts>();
-
-
-            if (filters == null || filters.Length == 0)
-                return query;
+            //if (filters == null || filters.Length == 0)
+            //    return query;
             List<Expression> expressions = new List<Expression>();
 
-            ParameterExpression obj = Expression.Parameter(typeof(object), "lambdObj");
+            ParameterExpression obj = Expression.Parameter(typeof(T), "lambdObj");
 
             foreach (FilterInput f in filters)
             {
@@ -83,6 +78,8 @@ namespace EntityGraphQL.NewFeatures
 
             Expression andChain = null; // For chaining together binary expressions
             Expression predicateBody = null;
+
+            #region Please Don't Judge Me
             // Go backwards through the list of filters and handle any AND conjunctions
             for (int i = 0; i < expressions.Count; i++)
             {
@@ -134,49 +131,36 @@ namespace EntityGraphQL.NewFeatures
                 predicateBody = expressions[0];
             else if (predicateBody != null && andChain != null)
                 predicateBody = Expression.OrElse(predicateBody, andChain);
+            #endregion
+            
+            var boolExpressionTree = Expression.Lambda<Func<T, bool>>(predicateBody, new[] { obj });
 
-            var boolExpressionTree = Expressionator.Lambdanator<T>(predicateBody, obj);
-
-            var result = query.Where(boolExpressionTree);
-
-            return result;
+            return boolExpressionTree;
         }
 
-        private Expression ConstructFilterExpression<T>(IQueryable<T> query, out ParameterExpression obj)
+        private Expression ConstructFilterExpression<T>(IEnumerable<T> query, ParameterExpression obj)
         {
-            obj = Expression.Parameter(typeof(object), "Lambda parameter obj");
-            return ConstructFilterExpression(query, obj);
-        }
-        private Expression ConstructFilterExpression<T>(IQueryable<T> query, ParameterExpression obj)
-        {
-            //obj = null;
             if (Field == null || HasTooManyComparisons(out Comparisons? comparison, this) || !comparison.HasValue)
                 return null;
 
-            //ParameterExpression obj;
-
             Expression body = Expressionator.ExpressionMaker(this, comparison, obj);
 
-            // returns a lambda that looks similar to: obj => (GetPropValueString(obj, Field) == Equals)
-            var boolExpressionTree = Expressionator.Lambdanator<T>(body, obj);
-
-            var result = query.Where(boolExpressionTree);
             return body;
         }
 
         /// <summary>
         /// Returns true if the filter has more than 1 comparison applied to a field.
         /// </summary>
-        /// <param name="filters"></param>
+        /// <param name="filter"></param>
         /// <returns></returns>
-        private static bool HasTooManyComparisons(out Comparisons? comparisons, FilterInput filters)
+        private static bool HasTooManyComparisons(out Comparisons? comparisons, FilterInput filter)
         {
             comparisons = null;
             var count = 0;
-            var props = filters.GetType().GetProperties();
+            var props = filter.GetType().GetProperties();
             foreach (PropertyInfo p in props)
             {
-                if (p.GetValue(filters) != null && p.Name != "Field" && p.Name != "Conjunction")
+                if (p.GetValue(filter) != null && p.Name != "Field" && p.Name != "Conjunction")
                 {
                     count++;
                     comparisons = (Comparisons)Enum.Parse(typeof(Comparisons), p.Name.Capitalize());
@@ -237,5 +221,6 @@ namespace System
         {
             return char.ToLower(str[0]) + str.Substring(1);
         }
+
     }
 }

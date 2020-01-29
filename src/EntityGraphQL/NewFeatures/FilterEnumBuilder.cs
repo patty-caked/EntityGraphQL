@@ -178,31 +178,9 @@ namespace EntityGraphQL.Schema
             if (!fieldProp.Resolve.Type.IsEnumerableOrArray())
                 return;
 
-            /*
-            var schemaType = schema.Type(fieldProp.ReturnTypeClrSingle);
-            // Find the first field named "id" or "<fieldProp.Name>Id" to turn into a field with arguments
-            var idFieldDef = schemaType.GetFields().FirstOrDefault(f => f.Name.ToLower() == "id" || f.Name.ToLower() == $"{fieldProp.Name.ToLower()}id");
-            if (idFieldDef == null)
-                return;
 
-            // Save a little bit of typing and clean things up.
-            var idFieldName = idFieldDef.Name;
+            // We need to build a lambda resembling (ctx, filters) => FilterThisQueryable(ctx.Item, filters)
 
-            // {ctx => FilterThis(ctx.Item.AsQueryable(), value(EFTest.EntityGraphQL.Mutations.TestMutations+<>c__DisplayClass1_0).args.Filters)}
-
-            // We need to build an anonymous type with id = RequiredField<idFieldDef.Resolve.Type>()
-            // Resulting lambda is (a, p) => a.Where(b => b.Id == p.Id).First()
-            // This allows us to "insert" .Select() (and .Include()) before the .First()
-            var requiredFieldType = typeof(RequiredField<>).MakeGenericType(idFieldDef.Resolve.Type);
-            var fieldNameAndType = new Dictionary<string, Type> { { idFieldName, requiredFieldType } };
-            var argTypes = LinqRuntimeTypeBuilder.GetDynamicType(fieldNameAndType);
-            var argTypesValue = argTypes.GetTypeInfo().GetConstructors()[0].Invoke(new Type[0]);
-            var argTypeParam = Expression.Parameter(argTypes);
-            Type arrayContextType = schema.Type(fieldProp.ReturnTypeClrSingle).ContextType;
-            var arrayContextParam = Expression.Parameter(arrayContextType);
-            */
-
-            // making a PropertyOrField expression that represents TContextType.PropertyName
             var asdf = new { filters = new FilterInput[0]};
             var asdfType = asdf.GetType();
 
@@ -213,15 +191,16 @@ namespace EntityGraphQL.Schema
             var filterArgTypesValue = asdfType.GetTypeInfo().GetConstructors()[0].Invoke(new object[] { asdf.filters });
             var filterArgTypeParam = Expression.Parameter(asdfType);
 
+            // making a PropertyOrField expression that represents TContextType.PropertyName
             Expression argFilter = Expression.PropertyOrField(filterArgTypeParam, "filters");
 
             var dbContextParam = Expression.Parameter(contextType);// A parameter for the database context type. This will be the first lambda parameter
-            var ctxField = Expression.PropertyOrField(dbContextParam, "Item");
+            //var ctxField = Expression.PropertyOrField(dbContextParam, "Item");
             //var ctxTable = Expression.Property(ctxField, "Value");
-            var queryableMeths = typeof(FilterInput).GetMethods();
-            var queryableMethInfo = queryableMeths.FirstOrDefault(method => method.Name == "FilterThisEnumerable" && method.IsGenericMethod == true);
+            //var queryableMeths = typeof(FilterInput).GetMethods();
+            //var queryableMethInfo = queryableMeths.FirstOrDefault(method => method.Name == "FilterThisQueryable" && method.IsGenericMethod == true);
             //Expression methExp = Expression.Call(queryableMethInfo, fieldProp.Resolve, argFilter);
-            Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisEnumerable", new Type[] { arrayContextType }, fieldProp.Resolve, argFilter);
+            Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, argFilter);
             //var asQueryableExp = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "AsQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, ctxField);
             methExp = new ParameterReplacer().ReplaceByType(methExp, contextType, dbContextParam);
             
@@ -229,22 +208,7 @@ namespace EntityGraphQL.Schema
             var filterSelectionExpression = Expression.Lambda(methExp, filterLambdaParams);
             // End new stuff
 
-            /*
-            var ctxId = Expression.PropertyOrField(arrayContextParam, $"{char.ToUpper(idFieldName[0])}{idFieldName.Substring(1)}");
-            Expression argId = Expression.PropertyOrField(argTypeParam, idFieldName);
-
-            argId = Expression.Property(argId, "Value"); // call RequiredField<>.Value to get the real type without a convert
-            var idBody = Expression.MakeBinary(ExpressionType.Equal, ctxId, argId);
-            var idLambda = Expression.Lambda(idBody, new[] { arrayContextParam });
-            Expression body = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "Where", new Type[] { arrayContextType }, fieldProp.Resolve, idLambda);
-
-            body = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "FirstOrDefault", new Type[] { arrayContextType }, body);
-            var contextParam = Expression.Parameter(contextType);
-            var lambdaParams = new[] { contextParam, argTypeParam };
-            body = new ParameterReplacer().ReplaceByType(body, contextType, contextParam);
-            var selectionExpression = Expression.Lambda(body, lambdaParams);
-            */
-            var name = $"{fieldProp.Name}FilterQuery";
+            var name = $"{fieldProp.Name}Filtered";
             var field = new Field(name, filterSelectionExpression, $"Return a {fieldProp.ReturnTypeClrSingle} after filtering it", fieldProp.ReturnTypeClrSingle, filterArgTypesValue);
             schema.AddField(field);
         }

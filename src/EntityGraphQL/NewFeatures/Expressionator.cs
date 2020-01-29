@@ -10,90 +10,73 @@ namespace EntityGraphQL.CodeGeneration
 {
     public static class Expressionator
     {
-        /*public static Expression ExpressionMaker(FilterInput filter, Comparisons? comparison, out ParameterExpression mainParam)
-        {
-            mainParam = Expression.Parameter(typeof(object), "Lambda parameter obj");
-
-            return ExpressionMaker(filter, comparison, mainParam);
-        }*/
-
         public static Expression ExpressionMaker(FilterInput filter, Comparisons? comparison, ParameterExpression mainParam)
         {
-            object temp = FilterInput.GetPropValue(filter, comparison.ToString());
-            string methName;
+            var compareTo = FilterInput.GetPropValue(filter, comparison.ToString());
+            ConstantExpression constCompare = Expression.Constant(compareTo, compareTo.GetType());
+
+            MemberExpression mainParamField = Expression.PropertyOrField(mainParam, filter.Field.ToString().Capitalize());
+            MethodCallExpression mainLambdaParamToString = Expression.Call(mainParamField, typeof(object).GetMethod("ToString", System.Type.EmptyTypes));
+
+            Expression binaryExpression;
+
+
+            var zeroConst = Expression.Constant(0, typeof(int));
+            var nullConst = Expression.Constant("", typeof(string));
             switch (comparison)
             {
                 case Comparisons.Equals:
-                    methName = "EqualTo";
+                    binaryExpression = Expression.Equal(mainLambdaParamToString, constCompare);
                     break;
                 case Comparisons.NotEqualTo:
-                    methName = "NotEqualTo";
+                    binaryExpression = Expression.NotEqual(mainLambdaParamToString, constCompare);
                     break;
                 case Comparisons.GreaterThan:
-                    methName = "GreaterThan";
+                    binaryExpression = Expression.Call(typeof(string).GetMethod("Compare", new Type[] { typeof(string), typeof(string) }), mainLambdaParamToString, constCompare);
+                    binaryExpression = Expression.GreaterThan(binaryExpression, zeroConst);
                     break;
                 case Comparisons.GreaterThanOrEqualTo:
-                    methName = "GreaterThanOrEqualTo";
+                    binaryExpression = Expression.Call(typeof(string).GetMethod("Compare", new Type[] { typeof(string), typeof(string) }), mainLambdaParamToString, constCompare);
+                    binaryExpression = Expression.GreaterThanOrEqual(binaryExpression, zeroConst);
                     break;
                 case Comparisons.LessThan:
-                    methName = "LessThan";
+                    binaryExpression = Expression.Call(typeof(string).GetMethod("Compare", new Type[] { typeof(string), typeof(string) }), mainLambdaParamToString, constCompare);
+                    binaryExpression = Expression.LessThan(binaryExpression, zeroConst);
                     break;
                 case Comparisons.LessThanOrEqualTo:
-                    methName = "LessThanOrEqualTo";
+                    binaryExpression = Expression.Call(typeof(string).GetMethod("Compare", new Type[] { typeof(string), typeof(string) }), mainLambdaParamToString, constCompare);
+                    binaryExpression = Expression.LessThanOrEqual(binaryExpression, zeroConst);
                     break;
                 case Comparisons.In:
-                    methName = "IsIn";
+                    binaryExpression = Expression.Call(typeof(Enumerable), "Contains", new Type[] { typeof(string) }, constCompare, mainLambdaParamToString);
                     break;
                 case Comparisons.NotIn:
-                    methName = "IsNotIn";
+                    binaryExpression = Expression.Call(typeof(Enumerable), "Contains", new Type[] { typeof(string) }, constCompare, mainLambdaParamToString);
+                    binaryExpression = Expression.Not(binaryExpression);
                     break;
                 case Comparisons.IsNull:
                     if ((bool)filter.IsNull)
-                        methName = "IsNull";
+                    {
+                        binaryExpression = Expression.Equal(mainLambdaParamToString, nullConst);
+                    }
                     else
-                        methName = "IsNotNull";
+                    {
+                        binaryExpression = Expression.NotEqual(mainLambdaParamToString, nullConst);
+                    }
                     break;
                 default:
                     mainParam = null;
+                    binaryExpression = null;
                     return null;
             }
 
-            return ExpressionMaker(temp, filter.Field.ToString(), methName, mainParam);
+            //return ExpressionMaker(compareTo, filter.Field.ToString(), methName, mainParam);
+            return binaryExpression;
         }
 
-        private static Expression ExpressionMaker(object compareTo, string field, string methName, ParameterExpression mainParam)
+        /*public static BinaryExpression EqualTo(Expression source, ConstantExpression compareTo)
         {
-            // mainParam => rest of the lambda expression
-            //mainParam = Expression.Parameter(typeof(object), "Lambda parameter obj");
-
-            ConstantExpression constEnum = Expression.Constant(field);
-            ConstantExpression constCompare = Expression.Constant(compareTo, compareTo.GetType());
-
-            //Expression propValMCE = Expression.Call(typeof(FilterInput).GetMethod("GetPropValueAsString", new Type[] { typeof(object), typeof(string) }),
-                //new Expression[] { mainParam, constEnum });
-
-            MethodInfo methInfo = typeof(Expressionator).GetMethod(methName);
-
-            Expression boolValMCE = Expression.Call(methInfo,
-                new Expression[] { mainParam, constEnum, constCompare });
-
-            return boolValMCE;
-        }
-
-        public static Expression<Func<T,bool>> Lambdanator<T>(Expression body, ParameterExpression paramEx)
-        {
-            return Expression.Lambda<Func<T, bool>>(body, new[] { paramEx });
-        }
-
-        public static IQueryable<T> FilterQueryMaker<T>()
-        {
-            return null;
-        }
-
-
-        public static bool EqualTo(object src, string field, string compValue)
-        {
-            return FilterInput.GetPropValueAsString(src, field) == compValue;
+            return Expression.Equal(source, compareTo);
         }
 
         public static bool NotEqualTo(object src, string field, string compValue)
@@ -141,6 +124,6 @@ namespace EntityGraphQL.CodeGeneration
         public static bool IsNotNull(object src, string field, bool blah = false)
         {
             return FilterInput.GetPropValueAsString(src, field) != "";
-        }
+        }*/
     }
 }
