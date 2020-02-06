@@ -50,6 +50,75 @@ namespace EntityGraphQL.Schema
         }
 
         /// <summary>
+        /// Takes a <paramref name="fieldName"/> and makes an enum out of it and it's fields
+        /// </summary>
+        /// <typeparam name="TContextType"></typeparam>
+        /// <param name="schema"></param>
+        /// <param name="fieldName"></param>
+        /// <returns></returns>
+        public static Type SingleEnumGenerator<TContextType>(this MappedSchemaProvider<TContextType> schema, string fieldName)
+        {
+            Type dbContextType = typeof(TContextType);
+            PropertyInfo field = dbContextType.GetProperty(fieldName, BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public);
+            if (field == null)
+                return typeof(string);
+
+            // Get a list of types from our dbContext to ignore when making our enum values
+            PropertyInfo[] dbFields = dbContextType.GetProperties(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public);
+            Type[] unacceptableTypes = dbFields.Where(pi => pi.PropertyType.GenericTypeArguments.Any()).Select(pi => pi.PropertyType.GenericTypeArguments.First()).ToArray();
+
+            // In practice, this should only hold one item.
+            Dictionary<string, string[]> enumAsDictionary = new Dictionary<string, string[]>();
+
+            string[] enumValueNames = GetPropNameList(field, unacceptableTypes);
+            enumAsDictionary.Add($"{fieldName}FilterEnum", enumValueNames);
+
+            List<Type> enumList = schema.DictionaryToEnumList(enumAsDictionary);
+
+            // Make a solid generic FilterInput<> type and pass it to the "AddInputType" method with an expression
+            var genericFilterInputType = typeof(FilterInput<>).MakeGenericType(enumList.First());
+            //Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisQueryable", new Type[] { genericFilterInputType }, fieldProp.Resolve, argFilter);
+            var result = schema.AddFilterInputType(genericFilterInputType, $"{fieldName}FilterInput", $"Dynamically generated input type for the {fieldName} query.");
+            
+
+            return enumList.First();
+        }
+
+        public static ISchemaType AddFilterInputType<TContextType>(this MappedSchemaProvider<TContextType> schema, Type filterType, string name, string description)
+        {
+            if (filterType is null)
+            {
+                throw new ArgumentNullException(nameof(filterType));
+            }
+
+            // Make a generic SchemaType<>
+            Type genericSchemaType = typeof(SchemaType<>).MakeGenericType(filterType);
+
+            // Get the MethodInfo for the AddAllFields method of our genericSchemaType
+            MethodInfo addAllFieldsMethodInfo = genericSchemaType.GetMethod("AddAllFields");
+
+
+            // Get method info representing the generic method "AddInputType."
+            MethodInfo mi = schema.GetType().GetMethod("AddInputType");
+
+            // Assign the filterType to the type parameter of the schema method.
+            MethodInfo miConstructed = mi.MakeGenericMethod(filterType);
+
+            // Invoke the method.
+            string[] args = { name, description };
+            dynamic result = miConstructed.Invoke(schema, args);
+
+            // Assign our TContextType to the type parameter of our addAllFields method.
+            MethodInfo schemaMiConstructed = addAllFieldsMethodInfo.MakeGenericMethod(typeof(TContextType));
+            //Invoke our addAllFields method.
+            object[] args2 = { schema, true, true };
+            dynamic addFieldsResult = schemaMiConstructed.Invoke(result, args2);
+
+            //schema.AddInputType<FilterInput<TBaseType>>(name, description);
+            return addFieldsResult;
+        }
+
+        /// <summary>
         /// Returns a list of property names to be used in filtering
         /// </summary>
         /// <param name="table"></param>
@@ -74,6 +143,17 @@ namespace EntityGraphQL.Schema
             return nameList.ToArray();
         }
 
+
+        // Create a dynamic assembly in the current application domain, 
+        // and allow it to be executed and saved to disk.
+        public static AssemblyName aName = new AssemblyName() { Name = "EnumAssembly" };
+        //AssemblyBuilder ab = currentDomain.DefineDynamicAssembly(aName, AssemblyBuilderAccess.RunAndSave);
+        //public static AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(aName, AssemblyBuilderAccess.Run);
+
+        // Define a dynamic module in "TempAssembly" assembly. For a single-
+        // module assembly, the module has the same name as the assembly.
+        public static ModuleBuilder mb = AssemblyBuilder.DefineDynamicAssembly(aName, AssemblyBuilderAccess.Run).DefineDynamicModule(aName.Name);
+
         public static List<Type> DictionaryToEnumList<TContextType>(this MappedSchemaProvider<TContextType> schema, Dictionary<string, string[]> enumStringDict)
         {
             /// Helpful info: 
@@ -86,18 +166,10 @@ namespace EntityGraphQL.Schema
             // Get the current application domain for the current thread.
             //AppDomain currentDomain = AppDomain.CurrentDomain;
 
-            // Create a dynamic assembly in the current application domain, 
-            // and allow it to be executed and saved to disk.
-            AssemblyName aName = new AssemblyName("EnumAssembly");
-            //AssemblyBuilder ab = currentDomain.DefineDynamicAssembly(aName, AssemblyBuilderAccess.RunAndSave);
-            AssemblyBuilder ab = AssemblyBuilder.DefineDynamicAssembly(aName, AssemblyBuilderAccess.Run);
-
-            // Define a dynamic module in "TempAssembly" assembly. For a single-
-            // module assembly, the module has the same name as the assembly.
-            ModuleBuilder mb = ab.DefineDynamicModule(aName.Name);
+            
             
             #region EnumBuilding Reference
-            // Define a public enumeration with the name "Elevation" and an 
+            /*// Define a public enumeration with the name "Elevation" and an 
             // underlying type of Integer.
             EnumBuilder ebTest = mb.DefineEnum("Elevation", TypeAttributes.Public, typeof(int));
 
@@ -111,7 +183,7 @@ namespace EntityGraphQL.Schema
             foreach (object o in Enum.GetValues(finishedTest))
             {
                 Console.WriteLine("{0}.{1} = {2}", finishedTest, o, ((int)o));
-            }
+            }*/
             #endregion
 
 
@@ -135,7 +207,7 @@ namespace EntityGraphQL.Schema
 
                 schema.AddEnum(entry.Key, finished, $"A list of the fields in {baseName} that can be filtered by.");
 
-                schema.FilterAdder(Activator.CreateInstance(finished), baseName);
+                //schema.FilterAdder(Activator.CreateInstance(finished), baseName);
             }
 
             return types;
@@ -181,26 +253,46 @@ namespace EntityGraphQL.Schema
 
             // We need to build a lambda resembling (ctx, filters) => FilterThisQueryable(ctx.Item, filters)
 
-            var asdf = new { filters = new FilterInput[0]};
-            var asdfType = asdf.GetType();
+            // Make our FilterInput<enum> generic type that will be used for our lambda argument
+            //var dynamicEnum = schema.SingleEnumGenerator(fieldProp.Name.Capitalize());
+            //var genericFilterInputType = typeof(FilterInput<>).MakeGenericType(dynamicEnum);
+
+            //var newFilters = Array.CreateInstance(genericFilterInputType, 0);
+            //dynamic newFilters = Activator.CreateInstance(genericFilterInputType.MakeArrayType(), 0);
+            //var arrayType = newFilters.GetType();
+
+            // Make a generic version of the "filters" array below.
+            //var filterArrayInfo = genericFilterInputType.MakeArrayType().GetTypeInfo();
+            //var filterConstruct = filterArrayInfo.GetConstructors()[0];
+            //var genericFilters = filterConstruct.Invoke(new object[] { 0 });
+
+            //var filters = new FilterInput[0];
+
+            var anonFilterArray = new { filters = new FilterInput[0], sortBy = new SortInput(), page = new int?(), pagesize = new int?() };
+            //var anonFilterArray = new TestArgs();
+            var anonFilterArrayType = anonFilterArray.GetType();
 
             Type arrayContextType = schema.Type(fieldProp.ReturnTypeClrSingle).ContextType;
-            var notRequiredArgType = typeof(FilterInput);
-            var filterNameAndType = new Dictionary<string, Type> { { "filters", notRequiredArgType } };
-            var filterArgTypes = LinqRuntimeTypeBuilder.GetDynamicType(filterNameAndType);
-            var filterArgTypesValue = asdfType.GetTypeInfo().GetConstructors()[0].Invoke(new object[] { asdf.filters });
-            var filterArgTypeParam = Expression.Parameter(asdfType);
+            //var notRequiredArgType = typeof(FilterInput<string>).MakeArrayType();
+            //var filterNameAndType = new Dictionary<string, Type> { { "filters", genericFilterInputType.MakeArrayType() } };
+            //var filterArgTypes = LinqRuntimeTypeBuilder.GetDynamicType(filterNameAndType);
+            var filterArgTypesValue = anonFilterArrayType.GetTypeInfo().GetConstructors()[0].Invoke(new object[0]);
+            var filterArgTypeParam = Expression.Parameter(anonFilterArrayType);
 
             // making a PropertyOrField expression that represents TContextType.PropertyName
-            Expression argFilter = Expression.PropertyOrField(filterArgTypeParam, "filters");
+            var argFilter = Expression.PropertyOrField(filterArgTypeParam, "filters");
+            var argSort = Expression.PropertyOrField(filterArgTypeParam, "sortBy");
+            var argPage = Expression.PropertyOrField(filterArgTypeParam, "page");
+            var argPageSize = Expression.PropertyOrField(filterArgTypeParam, "pagesize");
 
             var dbContextParam = Expression.Parameter(contextType);// A parameter for the database context type. This will be the first lambda parameter
             //var ctxField = Expression.PropertyOrField(dbContextParam, "Item");
             //var ctxTable = Expression.Property(ctxField, "Value");
-            //var queryableMeths = typeof(FilterInput).GetMethods();
+            //var queryableMeths = genericFilterInputType.GetMethod("FilterThisQueryable");
             //var queryableMethInfo = queryableMeths.FirstOrDefault(method => method.Name == "FilterThisQueryable" && method.IsGenericMethod == true);
             //Expression methExp = Expression.Call(queryableMethInfo, fieldProp.Resolve, argFilter);
-            Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, argFilter);
+            //Expression methExp = Expression.Call(queryableMeths.DeclaringType, queryableMeths.Name, new Type[] { arrayContextType }, fieldProp.Resolve, argFilter);
+            Expression methExp = Expression.Call(typeof(FilterInput), "FilterThisQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, argFilter, argSort, argPage, argPageSize);
             //var asQueryableExp = ExpressionUtil.MakeExpressionCall(new[] { typeof(Queryable), typeof(Enumerable) }, "AsQueryable", new Type[] { arrayContextType }, fieldProp.Resolve, ctxField);
             methExp = new ParameterReplacer().ReplaceByType(methExp, contextType, dbContextParam);
             
@@ -208,9 +300,48 @@ namespace EntityGraphQL.Schema
             var filterSelectionExpression = Expression.Lambda(methExp, filterLambdaParams);
             // End new stuff
 
-            var name = $"{fieldProp.Name}Filtered";
+            var name = fieldProp.Name.Singularize();
+            if (name == null)
+            {
+                // If we can't singularize it just use the name plus something as GraphQL doesn't support field overloads
+                name = $"{fieldProp.Name}";
+            }
             var field = new Field(name, filterSelectionExpression, $"Return a {fieldProp.ReturnTypeClrSingle} after filtering it", fieldProp.ReturnTypeClrSingle, filterArgTypesValue);
             schema.AddField(field);
+
+
+            // Not needed right now, but might be later
+            /*MethodInfo mi = schema.GetType().GetMethod("AddTypeMapping");
+
+            // Assign the filterType to the type parameter of the schema method.
+            MethodInfo miConstructed = mi.MakeGenericMethod(genericFilterInputType);
+            //string inputName = $"{fieldProp.Name.Capitalize()}FilterInput";
+            // Invoke the method.
+            string[] args = { $"{fieldProp.Name.Capitalize()}FilterInput" };
+            miConstructed.Invoke(schema, args);*/
+
+            
+        }
+
+        public static void AddField<TContextType>(this MappedSchemaProvider<TContextType> schema, Field field, bool? isNullable = null)
+        {
+            schema.Type<TContextType>().AddField(field, isNullable);
+        }
+
+        public static void AddField<TBaseType>(this SchemaType<TBaseType> schemaType, Field field, bool? isNullable = null)
+        {
+            if (isNullable.HasValue)
+                field.ReturnTypeNotNullable = !isNullable.Value;
+            var bleh = field.RequiredArgumentNames;
+            schemaType.AddField(field);
+        }
+
+        public class TestArgs
+        {
+            public FilterInput[] filters { get; set; }
+            public SortInput sortBy { get; set; }
+            public int? page { get; set; }
+            public int? pagesize { get; set; }
         }
     }
 }

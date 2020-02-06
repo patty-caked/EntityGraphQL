@@ -384,8 +384,14 @@ namespace EntityGraphQL.Schema
         private static object BuildArgumentFromMember(Dictionary<string, ExpressionResult> args, Field field, string memberName, Type memberType, object defaultValue)
         {
             string argName = memberName;
-            // check we have required arguments
-            if (memberType.GetGenericArguments().Any() && memberType.GetGenericTypeDefinition() == typeof(RequiredField<>))
+            // Makes sure this is compatible with arrays of generic types.
+            var arrayOrMemberType = memberType;
+            if (memberType.IsArray)
+            {
+                arrayOrMemberType = memberType.GetElementType();
+            }
+
+            if (arrayOrMemberType.GetGenericArguments().Any() && arrayOrMemberType.GetGenericTypeDefinition() == typeof(RequiredField<>))
             {
                 if (args == null || !args.ContainsKey(argName))
                 {

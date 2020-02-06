@@ -36,13 +36,13 @@ namespace EntityGraphQL.Compiler.Util
         {
             string type;
             if (fieldType.IsNullableType())
-                type = "N" + fieldType.GetGenericArguments()[0].Name;
+                type = "N" + fieldType.GetGenericArguments()[0].ToGenericTypeString();
             else if (fieldType.IsEnumerableOrArray())
-                type = "L" + fieldType.GetEnumerableOrArrayType().Name;
+                type = "L" + fieldType.GetEnumerableOrArrayType().ToGenericTypeString();
             else if (fieldType.GetTypeInfo().IsGenericType)
-                type = $"{fieldType.Name}:{string.Join(",", fieldType.GetGenericArguments().Select(a => a.Name))}";
+                type = $"{fieldType.ToGenericTypeString()}:{string.Join(",", fieldType.GetGenericArguments().Select(a => a.ToGenericTypeString()))}";
             else
-                type = fieldType.Name;
+                type = fieldType.ToGenericTypeString();
 
             key += fieldName + type;
             return key;
